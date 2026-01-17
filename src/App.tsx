@@ -6,6 +6,8 @@ interface Suggestion {
   name: string;
   country: string;
   state?: string;
+  lat: number;
+  lon: number;
 }
 
 interface WeatherData {
@@ -38,6 +40,7 @@ function App() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isSearchingSuggestions, setIsSearchingSuggestions] = useState(false)
+  const [displayLocationName, setDisplayLocationName] = useState('')
 
   const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY
 
@@ -60,7 +63,9 @@ function App() {
           const citySuggestions = data.map((item: any) => ({
             name: item.name,
             country: item.country,
-            state: item.state
+            state: item.state,
+            lat: item.lat,
+            lon: item.lon
           }));
           setSuggestions(citySuggestions);
           setShowSuggestions(true);
@@ -76,9 +81,9 @@ function App() {
     return () => clearTimeout(timer);
   }, [city]);
 
-  const fetchWeather = async (cityName?: string) => {
+  const fetchWeather = async (cityName?: string, lat?: number, lon?: number) => {
     const targetCity = cityName || city;
-    if (!targetCity.trim()) return
+    if (!targetCity.trim() && lat === undefined) return
     
     setLoading(true)
     setError('')
@@ -86,9 +91,15 @@ function App() {
     setShowSuggestions(false)
     
     try {
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?q=${targetCity.trim()}&units=metric&lang=pt_br&appid=${API_KEY}`
-      )
+      let url = `https://api.openweathermap.org/data/2.5/weather?units=metric&lang=pt_br&appid=${API_KEY}`;
+      
+      if (lat !== undefined && lon !== undefined) {
+        url += `&lat=${lat}&lon=${lon}`;
+      } else {
+        url += `&q=${targetCity.trim()}`;
+      }
+
+      const response = await fetch(url)
       
       if (!response.ok) {
         throw new Error('Cidade não encontrada. Verifique o nome e tente novamente.')
@@ -96,7 +107,13 @@ function App() {
 
       const data = await response.json()
       setWeather(data)
-      setCity(`${data.name}, ${data.sys.country}`)
+      
+      // Se tivermos um nome personalizado (do clique na sugestão), usamos ele. 
+      // Caso contrário, usamos o que a API retornar.
+      if (!cityName) {
+        setDisplayLocationName(`${data.name}, ${data.sys.country}`)
+        setCity(`${data.name}, ${data.sys.country}`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao obter dados meteorológicos')
       setWeather(null)
@@ -106,12 +123,18 @@ function App() {
   }
 
   const handleSuggestionClick = (s: Suggestion) => {
-    const fullName = `${s.name}${s.country ? `, ${s.country}` : ''}`;
+    const locationParts = [s.name];
+    if (s.state) locationParts.push(s.state);
+    if (s.country) locationParts.push(s.country);
+    
+    const fullName = locationParts.join(', ');
+    
     // Primeiro limpamos TUDO para garantir que o useEffect não rode
     setShowSuggestions(false);
     setSuggestions([]);
     setCity(fullName);
-    fetchWeather(fullName);
+    setDisplayLocationName(fullName);
+    fetchWeather(fullName, s.lat, s.lon);
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -171,7 +194,7 @@ function App() {
           <main className="weather-content">
             <div className="city-header">
               <MapPin size={18} />
-              <h2>{weather.name}, {weather.sys.country}</h2>
+              <h2>{displayLocationName}</h2>
             </div>
 
             <div className="main-info">
